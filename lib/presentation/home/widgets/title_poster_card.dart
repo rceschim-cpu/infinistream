@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
+import '../../../core/models/title_model.dart';
 
 class TitlePosterCard extends StatefulWidget {
-  final String itemName;
-  final String posterUrl;
+  final TitleModel title;
   final VoidCallback onTap;
 
   const TitlePosterCard({
     super.key,
-    required this.itemName,
-    required this.posterUrl,
+    required this.title,
     required this.onTap,
   });
 
@@ -28,7 +27,6 @@ class _TitlePosterCardState extends State<TitlePosterCard>
       duration: const Duration(milliseconds: 120),
       vsync: this,
     );
-
     _scale = Tween<double>(begin: 1.0, end: 0.96).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOut),
     );
@@ -52,15 +50,19 @@ class _TitlePosterCardState extends State<TitlePosterCard>
       child: ScaleTransition(
         scale: _scale,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(10),
           child: Stack(
             children: [
               Positioned.fill(
                 child: Hero(
-                  tag: widget.itemName,
+                  tag: 'poster-${widget.title.id}',
                   child: Image.network(
-                    widget.posterUrl,
+                    widget.title.posterUrl,
                     fit: BoxFit.cover,
+                    errorBuilder: (context, error, stack) => Container(
+                      color: Colors.grey[850],
+                      child: const Icon(Icons.broken_image, color: Colors.white38),
+                    ),
                   ),
                 ),
               ),
@@ -70,7 +72,7 @@ class _TitlePosterCardState extends State<TitlePosterCard>
                     gradient: LinearGradient(
                       colors: [
                         Colors.transparent,
-                        Colors.black.withValues(alpha: 0.85),
+                        Colors.black.withValues(alpha: 0.8),
                       ],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -79,12 +81,18 @@ class _TitlePosterCardState extends State<TitlePosterCard>
                 ),
               ),
               Positioned(
-                bottom: 10,
-                left: 10,
-                right: 10,
+                bottom: 6,
+                left: 6,
+                right: 6,
                 child: Text(
-                  widget.itemName,
-                  style: const TextStyle(color: Colors.white),
+                  widget.title.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],

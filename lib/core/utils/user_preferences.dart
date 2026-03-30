@@ -1,29 +1,13 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import '../services/auth_service.dart';
+import '../services/streaming_account_service.dart';
 
 class UserPreferences {
-  static const _key = 'my_streamings';
-  static final Set<String> myStreamings = {};
-
   static Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList(_key) ?? [];
-    myStreamings
-      ..clear()
-      ..addAll(list);
+    await AuthService.init();
+    await StreamingAccountService.init();
   }
 
-  static bool hasStreaming(String name) {
-    return myStreamings.contains(name);
-  }
-
-  static Future<void> toggleStreaming(String name) async {
-    if (myStreamings.contains(name)) {
-      myStreamings.remove(name);
-    } else {
-      myStreamings.add(name);
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_key, myStreamings.toList());
-  }
+  // Mantido para compatibilidade com código existente
+  static bool hasStreaming(String name) =>
+      StreamingAccountService.isConnected(name);
 }
