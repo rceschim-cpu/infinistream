@@ -9,6 +9,78 @@ import '../settings/my_streamings_page.dart';
 import '../title/title_detail_page.dart';
 import 'widgets/title_poster_card.dart';
 
+// ─── Categoria ────────────────────────────────────────────────────────────────
+
+class _Category {
+  final String label;
+  final bool isAll;
+  final String? fixedMediaType; // 'movie' | 'tv' | null (ambos)
+  final int? movieGenreId;
+  final int? tvGenreId;
+
+  const _Category({
+    required this.label,
+    this.isAll = false,
+    this.fixedMediaType,
+    this.movieGenreId,
+    this.tvGenreId,
+  });
+
+  // Retorna lista de seções: [sectionLabel, List<TitleModel>]
+  Future<List<(String, List<TitleModel>)>> load(TmdbService svc) async {
+    if (fixedMediaType == 'movie') {
+      final r = await svc.discover(mediaType: 'movie', genreId: movieGenreId);
+      return [('Filmes', r)];
+    }
+    if (fixedMediaType == 'tv') {
+      final r = await svc.discover(mediaType: 'tv', genreId: tvGenreId);
+      return [('Séries', r)];
+    }
+    // Ambos
+    final futures = <Future<List<TitleModel>>>[];
+    if (movieGenreId != null) {
+      futures.add(svc.discover(mediaType: 'movie', genreId: movieGenreId));
+    }
+    if (tvGenreId != null) {
+      futures.add(svc.discover(mediaType: 'tv', genreId: tvGenreId));
+    }
+    final results = await Future.wait(futures);
+    final sections = <(String, List<TitleModel>)>[];
+    if (movieGenreId != null && results.isNotEmpty) {
+      sections.add(('Filmes — $label', results[0]));
+    }
+    if (tvGenreId != null && results.length > 1) {
+      sections.add(('Séries — $label', results[1]));
+    } else if (tvGenreId != null && results.length == 1) {
+      sections.add(('Séries — $label', results[0]));
+    }
+    return sections;
+  }
+
+  static const all = _Category(label: 'Todos', isAll: true);
+
+  static const list = <_Category>[
+    _Category(label: 'Todos', isAll: true),
+    _Category(label: 'Filmes', fixedMediaType: 'movie'),
+    _Category(label: 'Séries', fixedMediaType: 'tv'),
+    _Category(label: 'Ação', movieGenreId: 28, tvGenreId: 10759),
+    _Category(label: 'Comédia', movieGenreId: 35, tvGenreId: 35),
+    _Category(label: 'Drama', movieGenreId: 18, tvGenreId: 18),
+    _Category(label: 'Animação', movieGenreId: 16, tvGenreId: 16),
+    _Category(label: 'Terror', movieGenreId: 27),
+    _Category(label: 'Ficção Científica', movieGenreId: 878, tvGenreId: 10765),
+    _Category(label: 'Aventura', movieGenreId: 12, tvGenreId: 10759),
+    _Category(label: 'Crime', movieGenreId: 80, tvGenreId: 80),
+    _Category(label: 'Documentário', movieGenreId: 99, tvGenreId: 99),
+    _Category(label: 'Romance', movieGenreId: 10749),
+    _Category(label: 'Família', movieGenreId: 10751, tvGenreId: 10751),
+    _Category(label: 'Suspense', movieGenreId: 53),
+    _Category(label: 'Guerra', movieGenreId: 10752, tvGenreId: 10768),
+  ];
+}
+
+// ─── Home Page ────────────────────────────────────────────────────────────────
+
 class HomePage extends StatefulWidget {
   final VoidCallback onLogout;
   const HomePage({super.key, required this.onLogout});
@@ -114,7 +186,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// ─── Catálogo ────────────────────────────────────────────────────────────────
+// ─── Aba Catálogo ─────────────────────────────────────────────────────────────
 
 class _CatalogTab extends StatefulWidget {
   @override
@@ -126,32 +198,44 @@ class _CatalogTabState extends State<_CatalogTab> {
   final _searchCtrl = TextEditingController();
   bool _searching = false;
 
-  late Future<List<List<TitleModel>>> _sectionsFuture;
+  _Category _selected = _Category.all;
+  late Future<List<List<TitleModel>>> _homeFuture;
+  Future<List<(String, List<TitleModel>)>>? _categoryFuture;
   Future<List<TitleModel>>? _searchFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadSections();
+    _homeFuture = _loadHome();
   }
 
-  void _loadSections() {
-    _sectionsFuture = Future.wait([
-      _service.getTrending(),
-      _service.getPopularMovies(),
-      _service.getPopularTV(),
-    ]);
+  Future<List<List<TitleModel>>> _loadHome() => Future.wait([
+        _service.getTrending(),
+        _service.getPopularMovies(),
+        _service.getPopularTV(),
+      ]);
+
+  void _selectCategory(_Category cat) {
+    setState(() {
+      _selected = cat;
+      _searching = false;
+      _searchFuture = null;
+      _searchCtrl.clear();
+      if (!cat.isAll) {
+        _categoryFuture = cat.load(_service);
+      }
+    });
+  }
+
+  void _search(String q) {
+    if (q.trim().isEmpty) return;
+    setState(() => _searchFuture = _service.search(q.trim()));
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
-  }
-
-  void _search(String q) {
-    if (q.trim().isEmpty) return;
-    setState(() => _searchFuture = _service.search(q.trim()));
   }
 
   @override
@@ -182,6 +266,15 @@ class _CatalogTabState extends State<_CatalogTab> {
                   letterSpacing: 1,
                 ),
               ),
+        bottom: _searching
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(52),
+                child: _CategoryChips(
+                  selected: _selected,
+                  onSelect: _selectCategory,
+                ),
+              ),
         actions: [
           if (_searching)
             IconButton(
@@ -202,24 +295,80 @@ class _CatalogTabState extends State<_CatalogTab> {
       ),
       body: _searching && _searchFuture != null
           ? _SearchResults(future: _searchFuture!)
-          : _MainCatalog(
-              sectionsFuture: _sectionsFuture,
-              inactiveAccounts: inactive,
-              onReload: () => setState(_loadSections),
-            ),
+          : _selected.isAll
+              ? _HomeContent(
+                  future: _homeFuture,
+                  inactiveAccounts: inactive,
+                  onReload: () => setState(() => _homeFuture = _loadHome()),
+                )
+              : _CategoryContent(
+                  future: _categoryFuture!,
+                  categoryLabel: _selected.label,
+                ),
     );
   }
 }
 
-// ─── Catálogo principal ───────────────────────────────────────────────────────
+// ─── Chips de categoria ───────────────────────────────────────────────────────
 
-class _MainCatalog extends StatelessWidget {
-  final Future<List<List<TitleModel>>> sectionsFuture;
+class _CategoryChips extends StatelessWidget {
+  final _Category selected;
+  final void Function(_Category) onSelect;
+
+  const _CategoryChips({required this.selected, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: _Category.list.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final cat = _Category.list[i];
+          final isSelected = selected.label == cat.label;
+          return FilterChip(
+            label: Text(cat.label),
+            selected: isSelected,
+            onSelected: (_) => onSelect(cat),
+            backgroundColor: Colors.grey[900],
+            selectedColor: Colors.redAccent,
+            checkmarkColor: Colors.white,
+            showCheckmark: false,
+            labelStyle: TextStyle(
+              color: isSelected ? Colors.white : Colors.white70,
+              fontSize: 13,
+              fontWeight:
+                  isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+            side: BorderSide(
+              color: isSelected
+                  ? Colors.redAccent
+                  : Colors.grey[700]!,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─── Conteúdo "Todos" (home padrão) ──────────────────────────────────────────
+
+class _HomeContent extends StatelessWidget {
+  final Future<List<List<TitleModel>>> future;
   final List<StreamingAccountModel> inactiveAccounts;
   final VoidCallback onReload;
 
-  const _MainCatalog({
-    required this.sectionsFuture,
+  const _HomeContent({
+    required this.future,
     required this.inactiveAccounts,
     required this.onReload,
   });
@@ -227,31 +376,29 @@ class _MainCatalog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<List<TitleModel>>>(
-      future: sectionsFuture,
+      future: future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return _ErrorView(error: snapshot.error.toString(), onRetry: onReload);
+          return _ErrorView(onRetry: onReload);
         }
-
-        final sections = snapshot.data!;
-
+        final s = snapshot.data!;
         return ListView(
           children: [
             ...inactiveAccounts.map((a) => _InactivityBanner(account: a)),
-            if (sections[0].isNotEmpty) ...[
-              _SectionHeader('Em alta esta semana'),
-              _HorizontalPosterList(titles: sections[0]),
+            if (s[0].isNotEmpty) ...[
+              const _SectionHeader('Em alta esta semana'),
+              _HorizontalPosterList(titles: s[0]),
             ],
-            if (sections[1].isNotEmpty) ...[
-              _SectionHeader('Filmes populares'),
-              _HorizontalPosterList(titles: sections[1]),
+            if (s[1].isNotEmpty) ...[
+              const _SectionHeader('Filmes populares'),
+              _HorizontalPosterList(titles: s[1]),
             ],
-            if (sections[2].isNotEmpty) ...[
-              _SectionHeader('Séries populares'),
-              _HorizontalPosterList(titles: sections[2]),
+            if (s[2].isNotEmpty) ...[
+              const _SectionHeader('Séries populares'),
+              _HorizontalPosterList(titles: s[2]),
             ],
             const SizedBox(height: 32),
           ],
@@ -261,46 +408,50 @@ class _MainCatalog extends StatelessWidget {
   }
 }
 
-class _ErrorView extends StatelessWidget {
-  final String error;
-  final VoidCallback onRetry;
+// ─── Conteúdo de categoria/gênero ────────────────────────────────────────────
 
-  const _ErrorView({required this.error, required this.onRetry});
+class _CategoryContent extends StatelessWidget {
+  final Future<List<(String, List<TitleModel>)>> future;
+  final String categoryLabel;
+
+  const _CategoryContent({
+    required this.future,
+    required this.categoryLabel,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.wifi_off_rounded, size: 56, color: Colors.grey),
-              const SizedBox(height: 16),
-              const Text(
-                'Não foi possível carregar o catálogo',
-                style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Verifique sua chave da API TMDB em\nlib/core/constants/app_constants.dart',
-                style: TextStyle(color: Colors.grey[500], fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Tentar novamente'),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return FutureBuilder<List<(String, List<TitleModel>)>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return _ErrorView(onRetry: () {});
+        }
+        final sections = snapshot.data ?? [];
+        if (sections.isEmpty || sections.every((s) => s.$2.isEmpty)) {
+          return Center(
+            child: Text(
+              'Nenhum título encontrado em "$categoryLabel".',
+              style: TextStyle(color: Colors.grey[500]),
+            ),
+          );
+        }
+
+        return ListView(
+          children: [
+            for (final section in sections)
+              if (section.$2.isNotEmpty) ...[
+                _SectionHeader(section.$1),
+                _AdaptiveGrid(titles: section.$2),
+                const SizedBox(height: 12),
+              ],
+            const SizedBox(height: 32),
+          ],
+        );
+      },
     );
   }
 }
@@ -309,7 +460,6 @@ class _ErrorView extends StatelessWidget {
 
 class _SearchResults extends StatelessWidget {
   final Future<List<TitleModel>> future;
-
   const _SearchResults({required this.future});
 
   @override
@@ -328,7 +478,7 @@ class _SearchResults extends StatelessWidget {
               children: [
                 const Icon(Icons.search_off, size: 48, color: Colors.grey),
                 const SizedBox(height: 12),
-                Text('Nenhum resultado encontrado.',
+                Text('Nenhum resultado.',
                     style: TextStyle(color: Colors.grey[500])),
               ],
             ),
@@ -344,7 +494,6 @@ class _SearchResults extends StatelessWidget {
 
 class _AdaptiveGrid extends StatelessWidget {
   final List<TitleModel> titles;
-
   const _AdaptiveGrid({required this.titles});
 
   int _columns(BuildContext context) {
@@ -359,7 +508,9 @@ class _AdaptiveGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
-      padding: const EdgeInsets.all(16),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: _columns(context),
         childAspectRatio: 0.65,
@@ -373,7 +524,8 @@ class _AdaptiveGrid extends StatelessWidget {
           title: title,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => TitleDetailPage(title: title)),
+            MaterialPageRoute(
+                builder: (_) => TitleDetailPage(title: title)),
           ),
         );
       },
@@ -381,11 +533,10 @@ class _AdaptiveGrid extends StatelessWidget {
   }
 }
 
-// ─── Seções horizontais ───────────────────────────────────────────────────────
+// ─── Seção horizontal (home padrão) ──────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
   final String label;
-
   const _SectionHeader(this.label);
 
   @override
@@ -407,23 +558,17 @@ class _SectionHeader extends StatelessWidget {
 
 class _HorizontalPosterList extends StatelessWidget {
   final List<TitleModel> titles;
-
   const _HorizontalPosterList({required this.titles});
 
-  double _posterWidth(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    return w >= 720 ? 130 : 100;
-  }
-
-  double _posterHeight(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    return w >= 720 ? 195 : 150;
-  }
+  double _width(BuildContext context) =>
+      MediaQuery.of(context).size.width >= 720 ? 130 : 100;
+  double _height(BuildContext context) =>
+      MediaQuery.of(context).size.width >= 720 ? 195 : 150;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: _posterHeight(context),
+      height: _height(context),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -432,7 +577,7 @@ class _HorizontalPosterList extends StatelessWidget {
         itemBuilder: (context, i) {
           final title = titles[i];
           return SizedBox(
-            width: _posterWidth(context),
+            width: _width(context),
             child: TitlePosterCard(
               title: title,
               onTap: () => Navigator.push(
@@ -448,11 +593,10 @@ class _HorizontalPosterList extends StatelessWidget {
   }
 }
 
-// ─── Banner de inatividade ────────────────────────────────────────────────────
+// ─── Banner inatividade ───────────────────────────────────────────────────────
 
 class _InactivityBanner extends StatelessWidget {
   final StreamingAccountModel account;
-
   const _InactivityBanner({required this.account});
 
   @override
@@ -487,7 +631,8 @@ class _InactivityBanner extends StatelessWidget {
             child: const Text('Cancelar', style: TextStyle(fontSize: 12)),
           ),
           GestureDetector(
-            onTap: () => StreamingAccountService.snoozeAlert(account.providerName),
+            onTap: () =>
+                StreamingAccountService.snoozeAlert(account.providerName),
             child: const Padding(
               padding: EdgeInsets.only(left: 4),
               child: Icon(Icons.close, size: 16, color: Colors.white38),
@@ -527,11 +672,56 @@ class _InactivityBanner extends StatelessWidget {
   }
 }
 
+// ─── Erro ─────────────────────────────────────────────────────────────────────
+
+class _ErrorView extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _ErrorView({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_off_rounded,
+                  size: 56, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                'Não foi possível carregar',
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Verifique sua chave TMDB em\nlib/core/constants/app_constants.dart',
+                style:
+                    TextStyle(color: Colors.grey[500], fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Tentar novamente'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Perfil ───────────────────────────────────────────────────────────────────
 
 class _ProfileTab extends StatelessWidget {
   final VoidCallback onLogout;
-
   const _ProfileTab({required this.onLogout});
 
   @override
@@ -560,7 +750,8 @@ class _ProfileTab extends StatelessWidget {
                 const CircleAvatar(
                   radius: 44,
                   backgroundColor: Colors.redAccent,
-                  child: Icon(Icons.person, size: 44, color: Colors.white),
+                  child:
+                      Icon(Icons.person, size: 44, color: Colors.white),
                 ),
                 const SizedBox(height: 16),
                 if (user != null) ...[
@@ -572,7 +763,8 @@ class _ProfileTab extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     user.email,
-                    style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                    style: TextStyle(
+                        color: Colors.grey[500], fontSize: 14),
                   ),
                 ],
                 const SizedBox(height: 32),
@@ -589,8 +781,9 @@ class _ProfileTab extends StatelessWidget {
                       value: '${inactive.length}',
                       label: 'Inativos',
                       icon: Icons.warning_amber,
-                      color:
-                          inactive.isNotEmpty ? Colors.orange : Colors.grey,
+                      color: inactive.isNotEmpty
+                          ? Colors.orange
+                          : Colors.grey,
                     ),
                   ],
                 ),
@@ -599,12 +792,14 @@ class _ProfileTab extends StatelessWidget {
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: onLogout,
-                    icon: const Icon(Icons.logout, color: Colors.red),
+                    icon:
+                        const Icon(Icons.logout, color: Colors.red),
                     label: const Text('Sair',
-                        style:
-                            TextStyle(color: Colors.red, fontSize: 16)),
+                        style: TextStyle(
+                            color: Colors.red, fontSize: 16)),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 14),
                       side: const BorderSide(color: Colors.red),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -651,11 +846,14 @@ class _StatCard extends StatelessWidget {
           Text(
             value,
             style: TextStyle(
-                fontSize: 28, fontWeight: FontWeight.bold, color: color),
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: color),
           ),
           const SizedBox(height: 2),
           Text(label,
-              style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+              style:
+                  TextStyle(color: Colors.grey[500], fontSize: 12)),
         ],
       ),
     );

@@ -18,35 +18,135 @@ class TitleDetailPage extends StatefulWidget {
 
 class _TitleDetailPageState extends State<TitleDetailPage> {
   final _service = TmdbService();
-  late Future<List<StreamingProviderModel>> _providersFuture;
-  late Future<String?> _trailerFuture;
+  late Future<(List<StreamingProviderModel>, String?)> _dataFuture;
 
   @override
   void initState() {
     super.initState();
-    _providersFuture = _service.getWatchProviders(
-      widget.title.id,
-      widget.title.mediaType,
-    );
-    _trailerFuture = _service.getTrailerKey(
-      widget.title.id,
-      widget.title.mediaType,
+    _dataFuture = Future.wait([
+      _service.getWatchProviders(widget.title.id, widget.title.mediaType),
+      _service.getTrailerKey(widget.title.id, widget.title.mediaType),
+    ]).then((results) => (
+          results[0] as List<StreamingProviderModel>,
+          results[1] as String?,
+        ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isWide = MediaQuery.of(context).size.width >= 720;
+    return isWide ? _WideLayout(title: widget.title, dataFuture: _dataFuture)
+                  : _NarrowLayout(title: widget.title, dataFuture: _dataFuture);
+  }
+}
+
+// ─── Layout Desktop ───────────────────────────────────────────────────────────
+
+class _WideLayout extends StatelessWidget {
+  final TitleModel title;
+  final Future<(List<StreamingProviderModel>, String?)> dataFuture;
+
+  const _WideLayout({required this.title, required this.dataFuture});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title.name, overflow: TextOverflow.ellipsis),
+        backgroundColor: const Color(0xFF0D0D0D),
+      ),
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Coluna esquerda: poster
+          SizedBox(
+            width: 240,
+            child: Column(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    bottomRight: Radius.circular(12),
+                  ),
+                  child: Image.network(
+                    title.posterUrl,
+                    fit: BoxFit.cover,
+                    width: 240,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 360,
+                      width: 240,
+                      color: Colors.grey[850],
+                      child: const Icon(Icons.broken_image,
+                          color: Colors.white38, size: 48),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: FutureBuilder<(List<StreamingProviderModel>, String?)>(
+                    future: dataFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const SizedBox(
+                            height: 40,
+                            child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+                      }
+                      final providers = snapshot.data?.$1 ?? [];
+                      if (providers.isEmpty) return const SizedBox.shrink();
+                      return SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.play_circle_outline),
+                          label: const Text('Assistir agora'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.redAccent,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () => _showWatchSheet(context, providers),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const VerticalDivider(width: 1, thickness: 1),
+          // Coluna direita: conteúdo
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(28, 20, 28, 40),
+              child: FutureBuilder<(List<StreamingProviderModel>, String?)>(
+                future: dataFuture,
+                builder: (context, snapshot) {
+                  final trailerKey = snapshot.data?.$2;
+                  final providers = snapshot.data?.$1 ?? [];
+                  return _ContentColumn(
+                    title: title,
+                    trailerKey: trailerKey,
+                    providers: providers,
+                    isWide: true,
+                    onWatch: () => _showWatchSheet(context, providers),
+                    loading: snapshot.connectionState == ConnectionState.waiting,
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  void _showWatchModal(
-      BuildContext context, List<StreamingProviderModel> providers) {
-    // Ordena: conectados primeiro, depois por nome
+  void _showWatchSheet(BuildContext context, List<StreamingProviderModel> providers) {
     final sorted = [...providers]..sort((a, b) {
-        final aConn = StreamingAccountService.isConnected(a.normalizedName)
-            ? 0
-            : 1;
-        final bConn = StreamingAccountService.isConnected(b.normalizedName)
-            ? 0
-            : 1;
+        final aConn = StreamingAccountService.isConnected(a.normalizedName) ? 0 : 1;
+        final bConn = StreamingAccountService.isConnected(b.normalizedName) ? 0 : 1;
         return aConn.compareTo(bConn);
       });
-
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.grey[900],
@@ -54,22 +154,26 @@ class _TitleDetailPageState extends State<TitleDetailPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _WatchModal(
-        title: widget.title,
-        providers: sorted,
-      ),
+      builder: (_) => _WatchModal(title: title, providers: sorted),
     );
   }
+}
+
+// ─── Layout Mobile ────────────────────────────────────────────────────────────
+
+class _NarrowLayout extends StatelessWidget {
+  final TitleModel title;
+  final Future<(List<StreamingProviderModel>, String?)> dataFuture;
+
+  const _NarrowLayout({required this.title, required this.dataFuture});
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.title;
-
     return Scaffold(
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 280,
+            expandedHeight: 260,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
               background: Hero(
@@ -93,120 +197,38 @@ class _TitleDetailPageState extends State<TitleDetailPage> {
             ),
           ),
           SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title.name,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    title.mediaType == 'tv' ? 'Série' : 'Filme',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[500],
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  // Trailer
-                  FutureBuilder<String?>(
-                    future: _trailerFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 20),
-                          child: Center(
-                            child: SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                        );
-                      }
-                      final key = snapshot.data;
-                      if (key == null) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Trailer',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white70,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            TrailerPlayer(videoKey: key),
-                          ],
+            child: FutureBuilder<(List<StreamingProviderModel>, String?)>(
+              future: dataFuture,
+              builder: (context, snapshot) {
+                final trailerKey = snapshot.data?.$2;
+                final providers = snapshot.data?.$1 ?? [];
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                  child: _ContentColumn(
+                    title: title,
+                    trailerKey: trailerKey,
+                    providers: providers,
+                    isWide: false,
+                    loading: snapshot.connectionState == ConnectionState.waiting,
+                    onWatch: () {
+                      final sorted = [...providers]..sort((a, b) {
+                          final aConn = StreamingAccountService.isConnected(a.normalizedName) ? 0 : 1;
+                          final bConn = StreamingAccountService.isConnected(b.normalizedName) ? 0 : 1;
+                          return aConn.compareTo(bConn);
+                        });
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: Colors.grey[900],
+                        isScrollControlled: true,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                         ),
+                        builder: (_) => _WatchModal(title: title, providers: sorted),
                       );
                     },
                   ),
-                  if (title.overview.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Sinopse',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white70,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      title.overview,
-                      style: TextStyle(
-                        color: Colors.grey[400],
-                        fontSize: 13,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  FutureBuilder<List<StreamingProviderModel>>(
-                    future: _providersFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const SizedBox(
-                          height: 48,
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final providers = snapshot.data ?? [];
-
-                      return SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.play_circle_outline),
-                          label: const Text('Assistir agora',
-                              style: TextStyle(fontSize: 15)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.redAccent,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: () =>
-                              _showWatchModal(context, providers),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],
@@ -214,6 +236,137 @@ class _TitleDetailPageState extends State<TitleDetailPage> {
     );
   }
 }
+
+// ─── Conteúdo compartilhado ───────────────────────────────────────────────────
+
+class _ContentColumn extends StatelessWidget {
+  final TitleModel title;
+  final String? trailerKey;
+  final List<StreamingProviderModel> providers;
+  final bool isWide;
+  final bool loading;
+  final VoidCallback onWatch;
+
+  const _ContentColumn({
+    required this.title,
+    required this.trailerKey,
+    required this.providers,
+    required this.isWide,
+    required this.loading,
+    required this.onWatch,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!isWide) ...[
+          Text(
+            title.name,
+            style: const TextStyle(
+                fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          const SizedBox(height: 4),
+        ],
+        Text(
+          title.mediaType == 'tv' ? 'Série' : 'Filme',
+          style: TextStyle(
+              fontSize: 12, color: Colors.grey[500], letterSpacing: 1),
+        ),
+        // Trailer
+        if (trailerKey != null) ...[
+          const SizedBox(height: 20),
+          const Text('Trailer',
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white70)),
+          const SizedBox(height: 10),
+          TrailerPlayer(videoKey: trailerKey!),
+        ] else if (loading) ...[
+          const SizedBox(height: 20),
+          const SizedBox(
+            height: 24,
+            width: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ],
+        // Sinopse
+        if (title.overview.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          const Text('Sinopse',
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white70)),
+          const SizedBox(height: 6),
+          Text(
+            title.overview,
+            style: TextStyle(
+                color: Colors.grey[400], fontSize: 13, height: 1.6),
+          ),
+        ],
+        // Providers inline (desktop) ou botão (mobile)
+        const SizedBox(height: 24),
+        if (isWide && providers.isNotEmpty) ...[
+          const Text('Disponível em:',
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white70)),
+          const SizedBox(height: 12),
+          _InlineProviders(providers: providers, titleName: title.name),
+        ] else if (!isWide) ...[
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.play_circle_outline),
+              label: const Text('Assistir agora',
+                  style: TextStyle(fontSize: 15)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: loading ? null : onWatch,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ─── Providers inline (desktop) ───────────────────────────────────────────────
+
+class _InlineProviders extends StatelessWidget {
+  final List<StreamingProviderModel> providers;
+  final String titleName;
+
+  const _InlineProviders(
+      {required this.providers, required this.titleName});
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = [...providers]..sort((a, b) {
+        final aConn = StreamingAccountService.isConnected(a.normalizedName) ? 0 : 1;
+        final bConn = StreamingAccountService.isConnected(b.normalizedName) ? 0 : 1;
+        return aConn.compareTo(bConn);
+      });
+
+    return Column(
+      children: sorted.map((p) => _ProviderRow(
+            provider: p,
+            titleName: titleName,
+            context: context,
+          )).toList(),
+    );
+  }
+}
+
+// ─── Modal Assistir (mobile) ──────────────────────────────────────────────────
 
 class _WatchModal extends StatelessWidget {
   final TitleModel title;
@@ -244,14 +397,11 @@ class _WatchModal extends StatelessWidget {
                 ),
               ),
             ),
-            const Text(
-              'Disponível em:',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            const Text('Disponível em:',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             if (providers.isEmpty)
               Expanded(
@@ -261,10 +411,8 @@ class _WatchModal extends StatelessWidget {
                     children: [
                       Icon(Icons.tv_off, color: Colors.grey[600], size: 40),
                       const SizedBox(height: 12),
-                      Text(
-                        'Não disponível em streaming no Brasil',
-                        style: TextStyle(color: Colors.grey[500]),
-                      ),
+                      Text('Não disponível em streaming no Brasil',
+                          style: TextStyle(color: Colors.grey[500])),
                     ],
                   ),
                 ),
@@ -274,7 +422,8 @@ class _WatchModal extends StatelessWidget {
                 child: ListView.separated(
                   controller: controller,
                   itemCount: providers.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 1),
                   itemBuilder: (ctx, i) => _ProviderRow(
                     provider: providers[i],
                     titleName: title.name,
@@ -288,6 +437,8 @@ class _WatchModal extends StatelessWidget {
     );
   }
 }
+
+// ─── Provider Row (compartilhado) ─────────────────────────────────────────────
 
 class _ProviderRow extends StatelessWidget {
   final StreamingProviderModel provider;
@@ -306,7 +457,7 @@ class _ProviderRow extends StatelessWidget {
         StreamingAccountService.isConnected(provider.normalizedName);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
           ClipRRect(
@@ -330,17 +481,12 @@ class _ProviderRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  provider.providerName,
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 14),
-                ),
+                Text(provider.providerName,
+                    style: const TextStyle(color: Colors.white, fontSize: 14)),
                 if (!isConnected)
-                  Text(
-                    'Conta não conectada',
-                    style: TextStyle(
-                        color: Colors.grey[600], fontSize: 11),
-                  ),
+                  Text('Conta não conectada',
+                      style:
+                          TextStyle(color: Colors.grey[600], fontSize: 11)),
               ],
             ),
           ),
@@ -360,11 +506,10 @@ class _ProviderRow extends StatelessWidget {
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                    borderRadius: BorderRadius.circular(8)),
               ),
-              child: const Text('Assistir',
-                  style: TextStyle(fontSize: 13)),
+              child:
+                  const Text('Assistir', style: TextStyle(fontSize: 13)),
             )
           else
             Row(
@@ -389,16 +534,16 @@ class _ProviderRow extends StatelessWidget {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     side: const BorderSide(color: Colors.white38),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                   child: const Text('Conectar',
-                      style: TextStyle(fontSize: 12, color: Colors.white70)),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.white70)),
                 ),
                 const SizedBox(width: 6),
                 OutlinedButton(
-                  onPressed: () =>
-                      DeepLinkService.openSignup(provider.normalizedName),
+                  onPressed: () => DeepLinkService.openSignup(
+                      provider.normalizedName),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 6),
@@ -407,11 +552,11 @@ class _ProviderRow extends StatelessWidget {
                     side: BorderSide(
                         color: Colors.blueAccent.withValues(alpha: 0.5)),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                   child: const Text('Criar conta',
-                      style: TextStyle(fontSize: 12, color: Colors.blueAccent)),
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.blueAccent)),
                 ),
               ],
             ),

@@ -26,6 +26,17 @@ class TmdbService {
         '$_base/search/multi?api_key=$_key&language=$_lang&query=${Uri.encodeComponent(query)}',
       );
 
+  /// Descobre títulos por tipo e/ou gênero.
+  Future<List<TitleModel>> discover({
+    required String mediaType, // 'movie' ou 'tv'
+    int? genreId,
+  }) async {
+    var url =
+        '$_base/discover/$mediaType?api_key=$_key&language=$_lang&sort_by=popularity.desc&region=$_region';
+    if (genreId != null) url += '&with_genres=$genreId';
+    return _fetchList(url);
+  }
+
   Future<List<TitleModel>> _fetchList(String url) async {
     final response = await http.get(Uri.parse(url));
     if (response.statusCode != 200) {
