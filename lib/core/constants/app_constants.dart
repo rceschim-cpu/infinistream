@@ -1,6 +1,6 @@
 class AppConstants {
   // Obtenha sua chave em: https://www.themoviedb.org/settings/api
-  static const String tmdbApiKey = 'SUA_CHAVE_AQUI';
+  static const String tmdbApiKey = '58e159eec07c346d53d5c0c4775dab61';
 
   static const String tmdbBaseUrl = 'https://api.themoviedb.org/3';
   static const String tmdbImageBaseUrl = 'https://image.tmdb.org/t/p/w500';
