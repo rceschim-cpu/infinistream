@@ -32,6 +32,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Inject API key
+        run: |
+          sed -i "s/SUA_CHAVE_AQUI/${{ secrets.TMDB_API_KEY }}/g" lib/core/constants/app_constants.dart
+
       - name: Build web
         run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
 
