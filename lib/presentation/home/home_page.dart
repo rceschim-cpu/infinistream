@@ -11,7 +11,6 @@ import 'widgets/title_poster_card.dart';
 
 class HomePage extends StatefulWidget {
   final VoidCallback onLogout;
-
   const HomePage({super.key, required this.onLogout});
 
   @override
@@ -21,21 +20,76 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _tab = 0;
 
+  static const _destinations = [
+    NavigationRailDestination(
+      icon: Icon(Icons.home_outlined),
+      selectedIcon: Icon(Icons.home),
+      label: Text('Início'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.subscriptions_outlined),
+      selectedIcon: Icon(Icons.subscriptions),
+      label: Text('Streamings'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.person_outline),
+      selectedIcon: Icon(Icons.person),
+      label: Text('Perfil'),
+    ),
+  ];
+
+  List<Widget> get _pages => [
+        _CatalogTab(),
+        const MyStreamingsPage(),
+        _ProfileTab(onLogout: widget.onLogout),
+      ];
+
   @override
   Widget build(BuildContext context) {
+    final isWide = MediaQuery.of(context).size.width >= 720;
+
+    if (isWide) {
+      return Scaffold(
+        body: Row(
+          children: [
+            NavigationRail(
+              selectedIndex: _tab,
+              onDestinationSelected: (i) => setState(() => _tab = i),
+              labelType: NavigationRailLabelType.all,
+              backgroundColor: const Color(0xFF0D0D0D),
+              selectedIconTheme:
+                  const IconThemeData(color: Colors.redAccent),
+              selectedLabelTextStyle:
+                  const TextStyle(color: Colors.redAccent),
+              leading: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text(
+                  'IS',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              destinations: _destinations,
+            ),
+            const VerticalDivider(width: 1, thickness: 1),
+            Expanded(
+              child: IndexedStack(index: _tab, children: _pages),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
-      body: IndexedStack(
-        index: _tab,
-        children: [
-          _CatalogTab(),
-          const MyStreamingsPage(),
-          _ProfileTab(onLogout: widget.onLogout),
-        ],
-      ),
+      body: IndexedStack(index: _tab, children: _pages),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _tab,
         onTap: (i) => setState(() => _tab = i),
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xFF0D0D0D),
         selectedItemColor: Colors.redAccent,
         unselectedItemColor: Colors.grey[600],
         items: const [
@@ -97,9 +151,7 @@ class _CatalogTabState extends State<_CatalogTab> {
 
   void _search(String q) {
     if (q.trim().isEmpty) return;
-    setState(() {
-      _searchFuture = _service.search(q.trim());
-    });
+    setState(() => _searchFuture = _service.search(q.trim()));
   }
 
   @override
@@ -107,7 +159,9 @@ class _CatalogTabState extends State<_CatalogTab> {
     final inactive = StreamingAccountService.getInactiveAccounts();
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
+        backgroundColor: const Color(0xFF0D0D0D),
         title: _searching
             ? TextField(
                 controller: _searchCtrl,
@@ -115,12 +169,19 @@ class _CatalogTabState extends State<_CatalogTab> {
                 style: const TextStyle(color: Colors.white),
                 decoration: const InputDecoration(
                   hintText: 'Buscar filmes e séries...',
-                  hintStyle: TextStyle(color: Colors.white54),
+                  hintStyle: TextStyle(color: Colors.white38),
                   border: InputBorder.none,
                 ),
                 onSubmitted: _search,
               )
-            : const Text('InfiniStream'),
+            : const Text(
+                'InfiniStream',
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
         actions: [
           if (_searching)
             IconButton(
@@ -136,6 +197,7 @@ class _CatalogTabState extends State<_CatalogTab> {
               icon: const Icon(Icons.search),
               onPressed: () => setState(() => _searching = true),
             ),
+          const SizedBox(width: 8),
         ],
       ),
       body: _searching && _searchFuture != null
@@ -148,6 +210,8 @@ class _CatalogTabState extends State<_CatalogTab> {
     );
   }
 }
+
+// ─── Catálogo principal ───────────────────────────────────────────────────────
 
 class _MainCatalog extends StatelessWidget {
   final Future<List<List<TitleModel>>> sectionsFuture;
@@ -169,24 +233,7 @@ class _MainCatalog extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                const SizedBox(height: 12),
-                Text(
-                  'Erro ao carregar.\nVerifique sua chave TMDB.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey[400]),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                    onPressed: onReload,
-                    child: const Text('Tentar novamente')),
-              ],
-            ),
-          );
+          return _ErrorView(error: snapshot.error.toString(), onRetry: onReload);
         }
 
         final sections = snapshot.data!;
@@ -195,24 +242,70 @@ class _MainCatalog extends StatelessWidget {
           children: [
             ...inactiveAccounts.map((a) => _InactivityBanner(account: a)),
             if (sections[0].isNotEmpty) ...[
-              const _SectionHeader('Em alta esta semana'),
+              _SectionHeader('Em alta esta semana'),
               _HorizontalPosterList(titles: sections[0]),
             ],
             if (sections[1].isNotEmpty) ...[
-              const _SectionHeader('Filmes populares'),
+              _SectionHeader('Filmes populares'),
               _HorizontalPosterList(titles: sections[1]),
             ],
             if (sections[2].isNotEmpty) ...[
-              const _SectionHeader('Séries populares'),
+              _SectionHeader('Séries populares'),
               _HorizontalPosterList(titles: sections[2]),
             ],
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
           ],
         );
       },
     );
   }
 }
+
+class _ErrorView extends StatelessWidget {
+  final String error;
+  final VoidCallback onRetry;
+
+  const _ErrorView({required this.error, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_off_rounded, size: 56, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                'Não foi possível carregar o catálogo',
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Verifique sua chave da API TMDB em\nlib/core/constants/app_constants.dart',
+                style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Tentar novamente'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Busca ────────────────────────────────────────────────────────────────────
 
 class _SearchResults extends StatelessWidget {
   final Future<List<TitleModel>> future;
@@ -230,35 +323,65 @@ class _SearchResults extends StatelessWidget {
         final results = snapshot.data ?? [];
         if (results.isEmpty) {
           return Center(
-            child: Text('Nenhum resultado encontrado.',
-                style: TextStyle(color: Colors.grey[500])),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.search_off, size: 48, color: Colors.grey),
+                const SizedBox(height: 12),
+                Text('Nenhum resultado encontrado.',
+                    style: TextStyle(color: Colors.grey[500])),
+              ],
+            ),
           );
         }
-        return GridView.builder(
-          padding: const EdgeInsets.all(16),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            childAspectRatio: 0.7,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
+        return _AdaptiveGrid(titles: results);
+      },
+    );
+  }
+}
+
+// ─── Grid adaptivo ────────────────────────────────────────────────────────────
+
+class _AdaptiveGrid extends StatelessWidget {
+  final List<TitleModel> titles;
+
+  const _AdaptiveGrid({required this.titles});
+
+  int _columns(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    if (w >= 1400) return 8;
+    if (w >= 1100) return 6;
+    if (w >= 800) return 5;
+    if (w >= 600) return 4;
+    return 3;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: _columns(context),
+        childAspectRatio: 0.65,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
+      itemCount: titles.length,
+      itemBuilder: (context, i) {
+        final title = titles[i];
+        return TitlePosterCard(
+          title: title,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => TitleDetailPage(title: title)),
           ),
-          itemCount: results.length,
-          itemBuilder: (context, i) {
-            final title = results[i];
-            return TitlePosterCard(
-              title: title,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => TitleDetailPage(title: title)),
-              ),
-            );
-          },
         );
       },
     );
   }
 }
+
+// ─── Seções horizontais ───────────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
   final String label;
@@ -268,13 +391,14 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
       child: Text(
         label,
         style: const TextStyle(
-          fontSize: 16,
+          fontSize: 17,
           fontWeight: FontWeight.bold,
           color: Colors.white,
+          letterSpacing: 0.3,
         ),
       ),
     );
@@ -286,19 +410,29 @@ class _HorizontalPosterList extends StatelessWidget {
 
   const _HorizontalPosterList({required this.titles});
 
+  double _posterWidth(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    return w >= 720 ? 130 : 100;
+  }
+
+  double _posterHeight(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    return w >= 720 ? 195 : 150;
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 160,
+      height: _posterHeight(context),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: titles.length,
         separatorBuilder: (context, index) => const SizedBox(width: 10),
         itemBuilder: (context, i) {
           final title = titles[i];
           return SizedBox(
-            width: 100,
+            width: _posterWidth(context),
             child: TitlePosterCard(
               title: title,
               onTap: () => Navigator.push(
@@ -314,6 +448,8 @@ class _HorizontalPosterList extends StatelessWidget {
   }
 }
 
+// ─── Banner de inatividade ────────────────────────────────────────────────────
+
 class _InactivityBanner extends StatelessWidget {
   final StreamingAccountModel account;
 
@@ -322,10 +458,10 @@ class _InactivityBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.12),
+        color: Colors.orange.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
       ),
@@ -336,7 +472,7 @@ class _InactivityBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Sem uso em ${account.providerName} há ${account.daysSinceLastUse} dias',
+              '${account.providerName} sem uso há ${account.daysSinceLastUse} dias',
               style: const TextStyle(color: Colors.orange, fontSize: 13),
             ),
           ),
@@ -344,17 +480,18 @@ class _InactivityBanner extends StatelessWidget {
             onPressed: () => _showCancelDialog(context),
             style: TextButton.styleFrom(
               foregroundColor: Colors.orange,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: const Text('Cancelar', style: TextStyle(fontSize: 12)),
           ),
           GestureDetector(
-            onTap: () async {
-              await StreamingAccountService.snoozeAlert(account.providerName);
-            },
-            child: const Icon(Icons.close, size: 16, color: Colors.white38),
+            onTap: () => StreamingAccountService.snoozeAlert(account.providerName),
+            child: const Padding(
+              padding: EdgeInsets.only(left: 4),
+              child: Icon(Icons.close, size: 16, color: Colors.white38),
+            ),
           ),
         ],
       ),
@@ -367,7 +504,7 @@ class _InactivityBanner extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: Text('Cancelar ${account.providerName}?'),
         content: Text(
-          'Você não usa ${account.providerName} há ${account.daysSinceLastUse} dias.\n\n'
+          'Sem uso há ${account.daysSinceLastUse} dias.\n\n'
           'Você será redirecionado para a página de cancelamento.',
         ),
         actions: [
@@ -380,7 +517,8 @@ class _InactivityBanner extends StatelessWidget {
               Navigator.pop(ctx);
               await DeepLinkService.openCancellation(account.providerName);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red[700]),
+            style:
+                ElevatedButton.styleFrom(backgroundColor: Colors.red[700]),
             child: const Text('Cancelar assinatura'),
           ),
         ],
@@ -401,68 +539,83 @@ class _ProfileTab extends StatelessWidget {
     final user = AuthService.currentUser;
     final connected = StreamingAccountService.getConnectedAccounts();
     final inactive = StreamingAccountService.getInactiveAccounts();
+    final isWide = MediaQuery.of(context).size.width >= 720;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Perfil')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            const CircleAvatar(
-              radius: 40,
-              backgroundColor: Colors.redAccent,
-              child: Icon(Icons.person, size: 40, color: Colors.white),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0D0D0D),
+        title: const Text('Perfil'),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isWide ? 40 : 24,
+              vertical: 32,
             ),
-            const SizedBox(height: 16),
-            if (user != null) ...[
-              Text(
-                user.name,
-                style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                user.email,
-                style: TextStyle(color: Colors.grey[500], fontSize: 14),
-              ),
-            ],
-            const SizedBox(height: 28),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            child: Column(
               children: [
-                _StatCard(
-                  value: '${connected.length}',
-                  label: 'Streamings\nAtivos',
-                  icon: Icons.subscriptions,
-                  color: Colors.redAccent,
+                const CircleAvatar(
+                  radius: 44,
+                  backgroundColor: Colors.redAccent,
+                  child: Icon(Icons.person, size: 44, color: Colors.white),
                 ),
-                _StatCard(
-                  value: '${inactive.length}',
-                  label: 'Sem uso\n+30 dias',
-                  icon: Icons.warning_amber,
-                  color: inactive.isNotEmpty ? Colors.orange : Colors.grey,
+                const SizedBox(height: 16),
+                if (user != null) ...[
+                  Text(
+                    user.name,
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    user.email,
+                    style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                  ),
+                ],
+                const SizedBox(height: 32),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _StatCard(
+                      value: '${connected.length}',
+                      label: 'Ativos',
+                      icon: Icons.subscriptions,
+                      color: Colors.redAccent,
+                    ),
+                    _StatCard(
+                      value: '${inactive.length}',
+                      label: 'Inativos',
+                      icon: Icons.warning_amber,
+                      color:
+                          inactive.isNotEmpty ? Colors.orange : Colors.grey,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: onLogout,
-                icon: const Icon(Icons.logout, color: Colors.red),
-                label: const Text('Sair',
-                    style: TextStyle(color: Colors.red, fontSize: 16)),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: Colors.red),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: onLogout,
+                    icon: const Icon(Icons.logout, color: Colors.red),
+                    label: const Text('Sair',
+                        style:
+                            TextStyle(color: Colors.red, fontSize: 16)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: const BorderSide(color: Colors.red),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(height: 16),
+              ],
             ),
-            const SizedBox(height: 24),
-          ],
+          ),
         ),
       ),
     );
@@ -484,20 +637,27 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 28),
-        const SizedBox(height: 6),
-        Text(value,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(height: 8),
+          Text(
+            value,
             style: TextStyle(
-                fontSize: 26, fontWeight: FontWeight.bold, color: color)),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(color: Colors.grey[500], fontSize: 12),
-          textAlign: TextAlign.center,
-        ),
-      ],
+                fontSize: 28, fontWeight: FontWeight.bold, color: color),
+          ),
+          const SizedBox(height: 2),
+          Text(label,
+              style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+        ],
+      ),
     );
   }
 }
