@@ -3,11 +3,10 @@ import '../services/streaming_account_service.dart';
 
 class UserPreferences {
   static Future<void> load() async {
-    await AuthService.init();
+    await AuthService.init(); // Firebase gerencia auth automaticamente
     await StreamingAccountService.init();
   }
 
-  // Mantido para compatibilidade com código existente
   static bool hasStreaming(String name) =>
       StreamingAccountService.isConnected(name);
 }

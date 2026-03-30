@@ -756,13 +756,13 @@ class _ProfileTab extends StatelessWidget {
                 const SizedBox(height: 16),
                 if (user != null) ...[
                   Text(
-                    user.name,
+                    user.displayName ?? user.email ?? '',
                     style: const TextStyle(
                         fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    user.email,
+                    user.email ?? '',
                     style: TextStyle(
                         color: Colors.grey[500], fontSize: 14),
                   ),

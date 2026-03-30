@@ -1,12 +1,16 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'core/utils/user_preferences.dart';
 import 'core/services/auth_service.dart';
+import 'core/services/streaming_account_service.dart';
+import 'firebase_options.dart';
 import 'presentation/auth/login_page.dart';
 import 'presentation/home/home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await UserPreferences.load();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await StreamingAccountService.init();
   runApp(const InfiniStreamApp());
 }
 
@@ -41,26 +45,26 @@ class InfiniStreamApp extends StatelessWidget {
   }
 }
 
-class _AuthGate extends StatefulWidget {
+class _AuthGate extends StatelessWidget {
   const _AuthGate();
 
   @override
-  State<_AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends State<_AuthGate> {
-  @override
   Widget build(BuildContext context) {
-    if (AuthService.isLoggedIn) {
-      return HomePage(
-        onLogout: () async {
-          await AuthService.logout();
-          setState(() {});
-        },
-      );
-    }
-    return LoginPage(
-      onAuthSuccess: () => setState(() {}),
+    return StreamBuilder<User?>(
+      stream: AuthService.authStateChanges,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.data != null) {
+          return HomePage(
+            onLogout: () => AuthService.logout(),
+          );
+        }
+        return const LoginPage();
+      },
     );
   }
 }
