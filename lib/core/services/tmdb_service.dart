@@ -39,6 +39,31 @@ class TmdbService {
         .toList();
   }
 
+  /// Retorna a key do YouTube do primeiro trailer encontrado, ou null.
+  Future<String?> getTrailerKey(int id, String mediaType) async {
+    final uri = Uri.parse(
+      '$_base/$mediaType/$id/videos?api_key=$_key&language=$_lang',
+    );
+    final response = await http.get(uri);
+    if (response.statusCode != 200) return null;
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final results = data['results'] as List<dynamic>;
+
+    // Prefere trailer oficial no YouTube; fallback para qualquer vídeo
+    final videos = results
+        .map((v) => v as Map<String, dynamic>)
+        .where((v) => v['site'] == 'YouTube')
+        .toList();
+
+    final trailer = videos.firstWhere(
+      (v) => v['type'] == 'Trailer',
+      orElse: () => videos.isNotEmpty ? videos.first : {},
+    );
+
+    return trailer['key'] as String?;
+  }
+
   Future<List<StreamingProviderModel>> getWatchProviders(
     int id,
     String mediaType,

@@ -5,6 +5,7 @@ import '../../core/services/tmdb_service.dart';
 import '../../core/services/streaming_account_service.dart';
 import '../../core/services/deep_link_service.dart';
 import '../streaming/connect_streaming_page.dart';
+import 'widgets/trailer_player.dart';
 
 class TitleDetailPage extends StatefulWidget {
   final TitleModel title;
@@ -18,11 +19,16 @@ class TitleDetailPage extends StatefulWidget {
 class _TitleDetailPageState extends State<TitleDetailPage> {
   final _service = TmdbService();
   late Future<List<StreamingProviderModel>> _providersFuture;
+  late Future<String?> _trailerFuture;
 
   @override
   void initState() {
     super.initState();
     _providersFuture = _service.getWatchProviders(
+      widget.title.id,
+      widget.title.mediaType,
+    );
+    _trailerFuture = _service.getTrailerKey(
       widget.title.id,
       widget.title.mediaType,
     );
@@ -109,8 +115,47 @@ class _TitleDetailPageState extends State<TitleDetailPage> {
                       letterSpacing: 1,
                     ),
                   ),
+                  // Trailer
+                  FutureBuilder<String?>(
+                    future: _trailerFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState ==
+                          ConnectionState.waiting) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Center(
+                            child: SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      }
+                      final key = snapshot.data;
+                      if (key == null) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Trailer',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TrailerPlayer(videoKey: key),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                   if (title.overview.isNotEmpty) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     const Text(
                       'Sinopse',
                       style: TextStyle(
